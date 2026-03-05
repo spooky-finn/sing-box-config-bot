@@ -15,10 +15,8 @@ use utils::log::init_logger;
 
 #[tokio::main]
 async fn main() {
-    let config = AppConfig::from_env().expect("Failed to load environment configuration");
-
+    let config = AppConfig::load_env();
     init_logger(&config.log_level, config.log_disable_timestamp);
-
     info!("Starting bot");
 
     std::panic::set_hook(Box::new(|panic_info| {
@@ -55,23 +53,21 @@ async fn main() {
                 }
             }
         }))
-        .branch(
-            Update::filter_callback_query().branch(dptree::endpoint({
-                let service = handle_msg_service.clone();
-                move |query: teloxide::types::CallbackQuery| {
-                    let service = service.clone();
-                    async move {
-                        if query.from.is_bot {
-                            return Ok(());
-                        }
-                        if let Err(e) = service.handle_callback(&query).await {
-                            error!(error = %e, "Error handling callback");
-                        }
-                        Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
+        .branch(Update::filter_callback_query().branch(dptree::endpoint({
+            let service = handle_msg_service.clone();
+            move |query: teloxide::types::CallbackQuery| {
+                let service = service.clone();
+                async move {
+                    if query.from.is_bot {
+                        return Ok(());
                     }
+                    if let Err(e) = service.handle_callback(&query).await {
+                        error!(error = %e, "Error handling callback");
+                    }
+                    Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
                 }
-            })),
-        );
+            }
+        })));
 
     Dispatcher::builder(bot, handler)
         .enable_ctrlc_handler()

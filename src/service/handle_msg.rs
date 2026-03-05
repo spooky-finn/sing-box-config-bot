@@ -1,12 +1,18 @@
-use crate::db::{enums::UserStatus, NewUser, User};
-use crate::ports::user::IUserRepo;
-use crate::service::admin::{AdminService, InvitationCmd};
-use rand::Rng;
 use std::sync::Arc;
-use teloxide::prelude::*;
-use teloxide::types::{ChatId, InlineKeyboardButton, InlineKeyboardMarkup, Message, User as TgUser};
-use teloxide::Bot;
+
+use rand::Rng;
+use teloxide::{
+    prelude::*,
+    types::{ChatId, InlineKeyboardButton, InlineKeyboardMarkup, Message, User as TgUser},
+    Bot,
+};
 use tracing::info;
+
+use crate::{
+    db::{enums::UserStatus, NewUser, User},
+    ports::user::IUserRepo,
+    service::admin::{AdminService, InvitationCmd},
+};
 
 pub struct HandleMsgService {
     user_repo: Arc<dyn IUserRepo>,
@@ -27,7 +33,10 @@ impl HandleMsgService {
         }
     }
 
-    pub async fn handle_callback(&self, query: &CallbackQuery) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn handle_callback(
+        &self,
+        query: &CallbackQuery,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if query.from.is_bot {
             return Ok(());
         }
@@ -39,7 +48,10 @@ impl HandleMsgService {
         Ok(())
     }
 
-    pub async fn handle_msg(&self, msg: &Message) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn handle_msg(
+        &self,
+        msg: &Message,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let from = msg.from.as_ref();
         if from.is_none() || from.unwrap().is_bot {
             return Ok(());
@@ -63,7 +75,10 @@ impl HandleMsgService {
         Ok(())
     }
 
-    async fn register(&self, user: &TgUser) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn register(
+        &self,
+        user: &TgUser,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let auth_key = self.generate_auth_key();
         let new_user = NewUser {
             id: user.id.0 as i64,
@@ -79,7 +94,11 @@ impl HandleMsgService {
         Ok(())
     }
 
-    async fn send_status(&self, user_id: i64, user: &User) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn send_status(
+        &self,
+        user_id: i64,
+        user: &User,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let bot = Bot::from_env();
         let chat_id = ChatId(user_id);
 
@@ -102,8 +121,7 @@ impl HandleMsgService {
                 .await?;
             }
             UserStatus::Rejected => {
-                bot.send_message(chat_id, "Ваша заявка отклонена")
-                    .await?;
+                bot.send_message(chat_id, "Ваша заявка отклонена").await?;
             }
         }
 

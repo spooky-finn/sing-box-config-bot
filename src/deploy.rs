@@ -9,12 +9,8 @@ use utils::env::DeployConfig;
 use utils::log::init_logger;
 
 fn main() {
-    // Load and validate environment
     let config = DeployConfig::from_env().expect("Failed to load deployment configuration");
-
-    // Initialize logger
     init_logger("info", false);
-
     info!("Starting deployment to {}", config.deploy_host);
 
     match run_deployment(&config) {
@@ -33,9 +29,7 @@ fn run_deployment(config: &DeployConfig) -> Result<String, Box<dyn std::error::E
     // Read the generated config file
     let config_path = Path::new("config/sing-box.server.json");
     if !config_path.exists() {
-        return Err(
-            "Config file not found. Run 'cargo run --bin generate-config' first.".into(),
-        );
+        return Err("Config file not found. Run 'cargo run --bin generate-config' first.".into());
     }
 
     let config_content = std::fs::read_to_string(config_path)?;
@@ -47,7 +41,12 @@ fn run_deployment(config: &DeployConfig) -> Result<String, Box<dyn std::error::E
     sess.handshake()?;
 
     // Authenticate with key
-    sess.userauth_pubkey_file(&config.deploy_user, None, Path::new(&config.deploy_keyfile), None)?;
+    sess.userauth_pubkey_file(
+        &config.deploy_user,
+        None,
+        Path::new(&config.deploy_keyfile),
+        None,
+    )?;
 
     // Create remote directory if it doesn't exist
     let mkdir_cmd = format!("mkdir -p {}", config.deploy_cwd);
@@ -59,7 +58,12 @@ fn run_deployment(config: &DeployConfig) -> Result<String, Box<dyn std::error::E
 
     // Upload config file using scp
     let remote_config_path = format!("{}/sing-box.server.json", config.deploy_cwd);
-    let mut channel = sess.scp_send(Path::new(&remote_config_path), 0o644, config_content.len() as u64, None)?;
+    let mut channel = sess.scp_send(
+        Path::new(&remote_config_path),
+        0o644,
+        config_content.len() as u64,
+        None,
+    )?;
     channel.write_all(config_content.as_bytes())?;
     channel.send_eof()?;
     channel.wait_eof()?;

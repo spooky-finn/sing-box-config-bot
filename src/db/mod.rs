@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 pub mod enums;
 pub mod schema;
 
@@ -38,20 +40,9 @@ pub struct NewUser {
     pub created_at: String,
 }
 
-#[derive(Debug, Clone, Queryable, Selectable, Serialize, Deserialize)]
+#[derive(Debug, Clone, Queryable, Selectable, Serialize, Deserialize, Insertable)]
 #[diesel(table_name = vpn_uuid)]
-pub struct VpnUuidRow {
-    pub id: i64,
+pub struct VpnUuid {
     pub uuid: String,
     pub user_id: i64,
-    pub created_at: String,
-}
-
-#[derive(Debug, Insertable)]
-#[diesel(table_name = vpn_uuid)]
-pub struct NewVpnUuid {
-    pub id: i64,
-    pub uuid: String,
-    pub user_id: i64,
-    pub created_at: String,
 }

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -5,8 +7,29 @@ pub enum EnvError {
     #[error("Missing required environment variable: {0}")]
     Missing(String),
     #[error("Invalid environment variable {0}: {1}")]
-    #[allow(dead_code)]
     Invalid(String, String),
+}
+
+fn get_env(name: &str) -> Result<String, EnvError> {
+    dotenvy::dotenv().ok();
+    std::env::var(name).map_err(|_| EnvError::Missing(name.to_string()))
+}
+
+fn get_env_or(name: &str, default: &str) -> String {
+    dotenvy::dotenv().ok();
+    std::env::var(name).unwrap_or_else(|_| default.to_string())
+}
+
+fn parse_env<T: std::str::FromStr>(name: &str) -> Result<T, EnvError> {
+    let val = get_env(name)?;
+    val.parse::<T>()
+        .map_err(|_| EnvError::Invalid(name.to_string(), val))
+}
+
+fn parse_env_or<T: std::str::FromStr>(name: &str, default: &str) -> T {
+    let val = std::env::var(name).unwrap_or_else(|_| default.to_string());
+    val.parse::<T>()
+        .unwrap_or_else(|_| panic!("Invalid default value for {}", name))
 }
 
 #[derive(Debug, Clone)]
@@ -17,67 +40,29 @@ pub struct AppConfig {
     pub db_location: String,
     pub log_level: String,
     pub log_disable_timestamp: bool,
-    #[allow(dead_code)]
     pub sing_box_private_key: String,
-    #[allow(dead_code)]
     pub sing_box_short_id: String,
-    #[allow(dead_code)]
     pub sing_box_server_name: String,
-    #[allow(dead_code)]
     pub sing_box_server_port: u16,
 }
 
 impl AppConfig {
-    pub fn from_env() -> Result<Self, EnvError> {
-        dotenvy::dotenv().ok();
+    pub fn load_env() -> Self {
+        AppConfig::from_env().expect("Failed to load environment configuration")
+    }
 
-        let tg_bot_token = std::env::var("TG_BOT_TOKEN")
-            .map_err(|_| EnvError::Missing("TG_BOT_TOKEN".to_string()))?;
-
-        let tg_admin_id_str = std::env::var("TG_ADMIN_ID")
-            .map_err(|_| EnvError::Missing("TG_ADMIN_ID".to_string()))?;
-        let tg_admin_id = tg_admin_id_str
-            .parse::<i64>()
-            .map_err(|_| EnvError::Invalid("TG_ADMIN_ID".to_string(), tg_admin_id_str))?;
-
-        let client_config_endpoint = std::env::var("CLIENT_CONFIG_ENDPOINT")
-            .map_err(|_| EnvError::Missing("CLIENT_CONFIG_ENDPOINT".to_string()))?;
-
-        let db_location = std::env::var("DB_LOCATION")
-            .unwrap_or_else(|_| "./db/vpn_signaling_server.db".to_string());
-
-        let log_level =
-            std::env::var("LOG_LEVEL").unwrap_or_else(|_| "info".to_string());
-
-        let log_disable_timestamp = std::env::var("LOG_DISABLE_TIMESTAMP")
-            .map(|v| v == "true")
-            .unwrap_or(false);
-
-        let sing_box_private_key = std::env::var("SING_BOX_PRIVATE_KEY")
-            .map_err(|_| EnvError::Missing("SING_BOX_PRIVATE_KEY".to_string()))?;
-
-        let sing_box_short_id = std::env::var("SING_BOX_SHORT_ID")
-            .map_err(|_| EnvError::Missing("SING_BOX_SHORT_ID".to_string()))?;
-
-        let sing_box_server_name = std::env::var("SING_BOX_SERVER_NAME")
-            .unwrap_or_else(|_| "google.com".to_string());
-
-        let sing_box_server_port = std::env::var("SING_BOX_SERVER_PORT")
-            .unwrap_or_else(|_| "443".to_string())
-            .parse::<u16>()
-            .map_err(|_| EnvError::Invalid("SING_BOX_SERVER_PORT".to_string(), std::env::var("SING_BOX_SERVER_PORT").unwrap_or_default()))?;
-
+    fn from_env() -> Result<Self, EnvError> {
         Ok(Self {
-            tg_bot_token,
-            tg_admin_id,
-            client_config_endpoint,
-            db_location,
-            log_level,
-            log_disable_timestamp,
-            sing_box_private_key,
-            sing_box_short_id,
-            sing_box_server_name,
-            sing_box_server_port,
+            tg_bot_token: get_env("TELOXIDE_TOKEN")?,
+            tg_admin_id: parse_env("TG_ADMIN_ID")?,
+            client_config_endpoint: get_env("CLIENT_CONFIG_ENDPOINT")?,
+            db_location: get_env_or("DB_LOCATION", "./src/db/vpn_signaling_server.db"),
+            log_level: get_env_or("LOG_LEVEL", "info"),
+            log_disable_timestamp: get_env_or("LOG_DISABLE_TIMESTAMP", "false") == "true",
+            sing_box_private_key: get_env("SING_BOX_PRIVATE_KEY")?,
+            sing_box_short_id: get_env("SING_BOX_SHORT_ID")?,
+            sing_box_server_name: get_env_or("SING_BOX_SERVER_NAME", "google.com"),
+            sing_box_server_port: parse_env_or("SING_BOX_SERVER_PORT", "443"),
         })
     }
 }
@@ -93,29 +78,12 @@ pub struct DeployConfig {
 
 impl DeployConfig {
     pub fn from_env() -> Result<Self, EnvError> {
-        dotenvy::dotenv().ok();
-
-        let deploy_host = std::env::var("DEPLOY_HOST")
-            .map_err(|_| EnvError::Missing("DEPLOY_HOST".to_string()))?;
-
-        let deploy_keyfile = std::env::var("DEPLOY_KEYFILE")
-            .map_err(|_| EnvError::Missing("DEPLOY_KEYFILE".to_string()))?;
-
-        let deploy_user = std::env::var("DEPLOY_USER")
-            .map_err(|_| EnvError::Missing("DEPLOY_USER".to_string()))?;
-
-        let deploy_command = std::env::var("DEPLOY_COMMAND")
-            .map_err(|_| EnvError::Missing("DEPLOY_COMMAND".to_string()))?;
-
-        let deploy_cwd = std::env::var("DEPLOY_CWD")
-            .map_err(|_| EnvError::Missing("DEPLOY_CWD".to_string()))?;
-
         Ok(Self {
-            deploy_host,
-            deploy_keyfile,
-            deploy_user,
-            deploy_command,
-            deploy_cwd,
+            deploy_host: get_env("DEPLOY_HOST")?,
+            deploy_keyfile: get_env("DEPLOY_KEYFILE")?,
+            deploy_user: get_env("DEPLOY_USER")?,
+            deploy_command: get_env("DEPLOY_COMMAND")?,
+            deploy_cwd: get_env("DEPLOY_CWD")?,
         })
     }
 }

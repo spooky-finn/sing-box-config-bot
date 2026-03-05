@@ -1,5 +1,6 @@
+-- Your SQL goes here
 CREATE TABLE user (
-    id INTEGER PRIMARY KEY NOT NULL,
+    id BIGINT PRIMARY KEY NOT NULL,
     username TEXT NOT NULL,
     status INTEGER NOT NULL,
     auth_key TEXT NOT NULL,
@@ -8,7 +9,7 @@ CREATE TABLE user (
 
 CREATE TABLE vpn_uuid (
     uuid TEXT PRIMARY KEY NOT NULL,
-    user_id BIGINT NOT NULL REFERENCES user(id),
+    user_id BIGINT NOT NULL REFERENCES user(id)
 );
 
 CREATE INDEX idx_vpn_uuid_uuid ON vpn_uuid(uuid);

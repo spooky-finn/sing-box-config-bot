@@ -1,3 +1,5 @@
+// @generated automatically by Diesel CLI.
+
 diesel::table! {
     user (id) {
         id -> BigInt,
@@ -9,13 +11,12 @@ diesel::table! {
 }
 
 diesel::table! {
-    vpn_uuid (id) {
-        id -> BigInt,
+    vpn_uuid (uuid) {
         uuid -> Text,
         user_id -> BigInt,
-        created_at -> Text,
     }
 }
 
 diesel::joinable!(vpn_uuid -> user (user_id));
-diesel::allow_tables_to_appear_in_same_query!(user, vpn_uuid);
+
+diesel::allow_tables_to_appear_in_same_query!(user, vpn_uuid,);

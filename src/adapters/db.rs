@@ -27,21 +27,18 @@ impl DieselUserRepo {
 
     pub fn get_connection(
         &self,
-    ) -> Result<
-        diesel::r2d2::PooledConnection<ConnectionManager<SqliteConnection>>,
-        Box<dyn std::error::Error>,
-    > {
-        Ok(self.pool.get()?)
+    ) -> Result<diesel::r2d2::PooledConnection<ConnectionManager<SqliteConnection>>, UserRepoError>
+    {
+        self.pool
+            .get()
+            .map_err(|e| UserRepoError::Database(e.to_string()))
     }
 }
 
 impl IUserRepo for DieselUserRepo {
     fn select(&self, id: i64) -> Result<Option<User>, UserRepoError> {
         use crate::db::schema::user::dsl as user_dsl;
-        let mut conn = self
-            .pool
-            .get()
-            .map_err(|e| UserRepoError::Database(e.to_string()))?;
+        let mut conn = self.get_connection()?;
 
         let result = user_dsl::user
             .filter(user_dsl::id.eq(&id))
@@ -54,10 +51,7 @@ impl IUserRepo for DieselUserRepo {
 
     fn insert(&self, new_user: &NewUser) -> Result<(), UserRepoError> {
         use crate::db::schema::user::dsl as user_dsl;
-        let mut conn = self
-            .pool
-            .get()
-            .map_err(|e| UserRepoError::Database(e.to_string()))?;
+        let mut conn = self.get_connection()?;
 
         diesel::insert_into(user_dsl::user)
             .values(new_user)
@@ -69,10 +63,7 @@ impl IUserRepo for DieselUserRepo {
 
     fn get_by_status(&self, status: UserStatus) -> Result<Vec<User>, UserRepoError> {
         use crate::db::schema::user::dsl as user_dsl;
-        let mut conn = self
-            .pool
-            .get()
-            .map_err(|e| UserRepoError::Database(e.to_string()))?;
+        let mut conn = self.get_connection()?;
 
         let status_code = match status {
             UserStatus::New => 0,
@@ -90,10 +81,7 @@ impl IUserRepo for DieselUserRepo {
 
     fn set_status(&self, id: i64, status: UserStatus) -> Result<(), UserRepoError> {
         use crate::db::schema::user::dsl as user_dsl;
-        let mut conn = self
-            .pool
-            .get()
-            .map_err(|e| UserRepoError::Database(e.to_string()))?;
+        let mut conn = self.get_connection()?;
 
         let status_code = match status {
             UserStatus::New => 0,

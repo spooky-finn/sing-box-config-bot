@@ -4,7 +4,6 @@ mod ports;
 mod utils;
 
 use adapters::db::{init_db, DieselUserRepo};
-use db::{enums::UserStatus, NewVpnUuid, VpnUuidRow};
 use diesel::prelude::*;
 use ports::user::IUserRepo;
 use serde::{Deserialize, Serialize};
@@ -12,6 +11,8 @@ use std::fs;
 use tracing::{error, info};
 use utils::env::AppConfig;
 use utils::log::init_logger;
+
+use crate::db::VpnUuid;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct SingBoxUser {
@@ -83,12 +84,8 @@ struct SingBoxConfig {
 
 #[tokio::main]
 async fn main() {
-    // Load and validate environment
-    let config = AppConfig::from_env().expect("Failed to load environment configuration");
-
-    // Initialize logger
+    let config = AppConfig::load_env();
     init_logger(&config.log_level, config.log_disable_timestamp);
-
     info!("Generating sing-box server config");
 
     // Initialize database
@@ -101,7 +98,6 @@ async fn main() {
         .expect("Failed to get accepted users");
 
     // Get VPN UUIDs for accepted users
-    use crate::db::schema::vpn_uuid::dsl as vpn_dsl;
     let mut conn = user_repo
         .get_connection()
         .expect("Failed to get database connection");
@@ -110,13 +106,10 @@ async fn main() {
 
     for user in &accepted_users {
         // Get or create UUID for this user
-        let vpn_uuid = diesel::dsl::select(diesel::dsl::sql::<diesel::sql_types::BigInt>("1"))
-            .get_result::<i64>(&mut conn);
-
         use crate::db::schema::vpn_uuid::dsl as vpn_dsl;
         let uuid_record = vpn_dsl::vpn_uuid
             .filter(vpn_dsl::user_id.eq(user.id))
-            .first::<VpnUuidRow>(&mut conn)
+            .first::<VpnUuid>(&mut conn)
             .optional();
 
         match uuid_record {
@@ -129,11 +122,9 @@ async fn main() {
             Ok(None) => {
                 // Generate new UUID for this user
                 let new_uuid = uuid::Uuid::new_v4().to_string();
-                let new_vpn_uuid = NewVpnUuid {
-                    id: user.id,
+                let new_vpn_uuid = VpnUuid {
                     uuid: new_uuid.clone(),
                     user_id: user.id,
-                    created_at: chrono::Utc::now().to_rfc3339(),
                 };
 
                 // Insert the new UUID
@@ -191,10 +182,8 @@ async fn main() {
         }],
     };
 
-    // Serialize to JSON
     let json = serde_json::to_string_pretty(&sing_box_config).expect("Failed to serialize config");
 
-    // Write to file
     let output_path = "config/sing-box.server.json";
     fs::write(output_path, &json).expect("Failed to write config file");
 
