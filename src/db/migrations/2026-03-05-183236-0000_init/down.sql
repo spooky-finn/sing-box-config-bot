@@ -1,2 +1,2 @@
 DROP TABLE user;
-DROP TABLE vpn_uuid;
+DROP TABLE vless_identity;

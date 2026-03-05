@@ -2,7 +2,7 @@ use crate::db::enums::UserStatus;
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::db::{user, vpn_uuid};
+use crate::db::{user, vless_identity};
 
 #[derive(Debug, Clone, Queryable, Selectable, Serialize, Deserialize, Insertable)]
 #[diesel(table_name = user)]
@@ -15,18 +15,13 @@ pub struct User {
 
 impl User {
     pub fn status_enum(&self) -> UserStatus {
-        match self.status {
-            0 => UserStatus::New,
-            1 => UserStatus::Accepted,
-            2 => UserStatus::Rejected,
-            _ => UserStatus::New,
-        }
+        self.status.into()
     }
 }
 
 #[derive(Debug, Clone, Queryable, Selectable, Serialize, Deserialize, Insertable)]
-#[diesel(table_name = vpn_uuid)]
-pub struct VpnUuid {
+#[diesel(table_name = vless_identity)]
+pub struct VlessIdentity {
     pub uuid: String,
-    pub user_id: i64,
+    pub user_id: Option<i64>,
 }

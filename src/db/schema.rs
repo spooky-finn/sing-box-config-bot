@@ -10,12 +10,12 @@ diesel::table! {
 }
 
 diesel::table! {
-    vpn_uuid (uuid) {
+    vless_identity (uuid) {
         uuid -> Text,
-        user_id -> BigInt,
+        user_id -> Nullable<BigInt>,
     }
 }
 
-diesel::joinable!(vpn_uuid -> user (user_id));
+diesel::joinable!(vless_identity -> user (user_id));
 
-diesel::allow_tables_to_appear_in_same_query!(user, vpn_uuid,);
+diesel::allow_tables_to_appear_in_same_query!(user, vless_identity,);

@@ -170,14 +170,12 @@ cargo build --release
 | auth_key | TEXT | Authentication key |
 | created_at | TEXT | ISO 8601 timestamp |
 
-### vpn_uuid table
+### vless_identity table
 
 | Column | Type | Description |
 |--------|------|-------------|
-| id | INTEGER | Primary key |
-| uuid | TEXT | VPN UUID (unique) |
+| uuid | TEXT | VLESS identity UUID (primary key) |
 | user_id | INTEGER | Foreign key to user.id |
-| created_at | TEXT | ISO 8601 timestamp |
 
 ## Architecture
 

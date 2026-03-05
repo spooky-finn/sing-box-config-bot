@@ -10,20 +10,26 @@ use tracing::{error, info};
 use crate::{
     config::AppConfig,
     db::{enums::UserStatus, models::User},
-    ports::user::IUserRepo,
+    ports::{user::UserRepoTrait, vless_identity::VlessIdentityRepoTrait},
     service::admin::InvitationCmd,
 };
 
 pub struct HandleMsgService {
-    user_repo: Arc<dyn IUserRepo>,
+    user_repo: Arc<dyn UserRepoTrait>,
+    vless_identity_repo: Arc<dyn VlessIdentityRepoTrait>,
     config: AppConfig,
     bot: Bot,
 }
 
 impl HandleMsgService {
-    pub fn new(user_repo: Arc<dyn IUserRepo>, config: AppConfig) -> Self {
+    pub fn new(
+        user_repo: Arc<dyn UserRepoTrait>,
+        vless_identity_repo: Arc<dyn VlessIdentityRepoTrait>,
+        config: AppConfig,
+    ) -> Self {
         Self {
             bot: Bot::from_env(),
+            vless_identity_repo,
             user_repo,
             config,
         }
@@ -41,7 +47,7 @@ impl HandleMsgService {
         info!(user_id = user_id, "Handling callback");
 
         if let Some(cmd) = self.is_admin_invation_command(query) {
-            self.handle_invation_command(&cmd).await?;
+            self.handle_admin_invation_command(&cmd).await?;
         }
 
         // Acknowledge the callback query to remove the loading icon from the client
@@ -61,11 +67,11 @@ impl HandleMsgService {
         let user_id = from.id.0 as i64;
         info!(user_id = user_id, "Handling message");
 
-        let existing_user = self.user_repo.select(user_id)?;
+        let existing_user = self.user_repo.get(user_id)?;
 
         match existing_user {
             Some(user) => {
-                self.send_status(user_id, &user).await?;
+                self.send_status_message(&user).await?;
             }
             None => {
                 self.register(from).await?;
@@ -84,18 +90,14 @@ impl HandleMsgService {
         };
 
         self.user_repo.insert(&new_user)?;
-        self.send_message_to_admin(user, "Новая заявка").await?;
+        self.vless_identity_repo.assign(new_user.id)?;
+        self.send_invation_request_to_admin(user).await?;
 
         Ok(())
     }
 
-    async fn send_status(
-        &self,
-        user_id: i64,
-        user: &User,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
-        let chat_id = ChatId(user_id);
-
+    async fn send_status_message(&self, user: &User) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let chat_id = ChatId(user.id);
         let status = user.status_enum();
 
         match status {
@@ -109,10 +111,7 @@ impl HandleMsgService {
                 self.bot
                     .send_message(
                         chat_id,
-                        format!(
-                            "Вам одобрен доступ. Ваш файл конфигурации доступен по ссылке: {}",
-                            config_url
-                        ),
+                        format!("Вам одобрен доступ. Ссылка для подключения: {}", config_url),
                     )
                     .await?;
             }
@@ -131,18 +130,16 @@ impl HandleMsgService {
         format!("{}/{}", base, user.id)
     }
 
-    async fn send_message_to_admin(
+    async fn send_invation_request_to_admin(
         &self,
         user: &TgUser,
-        message: &str,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let bot = Bot::from_env();
         let msg = format!(
-            "Новая заявка от {}: {}",
+            "Новая заявка от {}",
             user.username
                 .clone()
                 .unwrap_or_else(|| user.id.0.to_string()),
-            message
         );
 
         let accept_cmd = InvitationCmd::new(user.id.0 as i64, UserStatus::Accepted);
@@ -160,7 +157,7 @@ impl HandleMsgService {
         Ok(())
     }
 
-    pub fn is_admin_invation_command(&self, msg: &CallbackQuery) -> Option<InvitationCmd> {
+    fn is_admin_invation_command(&self, msg: &CallbackQuery) -> Option<InvitationCmd> {
         if msg.from.id.0 as i64 != self.config.tg_admin_id {
             return None;
         }
@@ -170,16 +167,19 @@ impl HandleMsgService {
             .ok()
     }
 
-    pub async fn handle_invation_command(
+    async fn handle_admin_invation_command(
         &self,
         cmd: &InvitationCmd,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         self.user_repo.set_status(cmd.user_id, cmd.status)?;
-
-        match cmd.status {
-            UserStatus::Accepted => todo!(),
-            UserStatus::Rejected => todo!(),
-            UserStatus::New => {}
+        let user = self.user_repo.get(cmd.user_id)?;
+        match user {
+            Some(user) => {
+                self.send_status_message(&user).await?;
+            }
+            None => {
+                error!("user not found {}", cmd.user_id)
+            }
         }
 
         info!(user_id = cmd.user_id, status = ?cmd.status, "Admin callback handled");

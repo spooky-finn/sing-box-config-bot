@@ -1,123 +1,201 @@
-use std::path::Path;
+#![allow(dead_code)]
 
 use diesel::{
     prelude::*,
     r2d2::{ConnectionManager, Pool},
     sqlite::SqliteConnection,
 };
-use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 
 use crate::{
-    db::{enums::UserStatus, models::User},
-    ports::user::{IUserRepo, UserRepoError},
+    db::{
+        enums::UserStatus,
+        models::{User, VlessIdentity},
+        schema::{user, vless_identity},
+    },
+    ports::{user::UserRepoTrait, vless_identity::VlessIdentityRepoTrait, RepoError},
 };
 
-pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("src/db/migrations");
-
-pub type DbPool = Pool<ConnectionManager<SqliteConnection>>;
+pub type ConnPool = Pool<ConnectionManager<SqliteConnection>>;
 
 pub struct UserRepo {
-    pool: DbPool,
+    pub pool: ConnPool,
 }
 
 impl UserRepo {
-    pub fn new(pool: DbPool) -> Self {
+    pub fn new(pool: ConnPool) -> Self {
         Self { pool }
     }
 
-    pub fn get_connection(
+    pub fn conn(
         &self,
-    ) -> Result<diesel::r2d2::PooledConnection<ConnectionManager<SqliteConnection>>, UserRepoError>
+    ) -> Result<diesel::r2d2::PooledConnection<ConnectionManager<SqliteConnection>>, RepoError>
     {
         self.pool
             .get()
-            .map_err(|e| UserRepoError::Database(e.to_string()))
+            .map_err(|e| RepoError::Database(e.to_string()))
     }
 }
 
-impl IUserRepo for UserRepo {
-    fn select(&self, id: i64) -> Result<Option<User>, UserRepoError> {
-        use crate::db::schema::user::dsl as user_dsl;
-        let mut conn = self.get_connection()?;
+pub struct VlessIdentityRepo {
+    pool: ConnPool,
+}
 
-        let result = user_dsl::user
-            .filter(user_dsl::id.eq(&id))
+impl VlessIdentityRepo {
+    pub fn new(pool: ConnPool) -> Self {
+        Self { pool }
+    }
+
+    pub fn conn(
+        &self,
+    ) -> Result<diesel::r2d2::PooledConnection<ConnectionManager<SqliteConnection>>, RepoError>
+    {
+        self.pool
+            .get()
+            .map_err(|e| RepoError::Database(e.to_string()))
+    }
+}
+
+impl UserRepoTrait for UserRepo {
+    fn get(&self, id: i64) -> Result<Option<User>, RepoError> {
+        let mut conn = self.conn()?;
+
+        let result = user::table
+            .filter(user::id.eq(&id))
             .first::<User>(&mut conn)
             .optional()
-            .map_err(|e| UserRepoError::Database(e.to_string()))?;
+            .map_err(|e| RepoError::Database(e.to_string()))?;
 
         Ok(result)
     }
 
-    fn insert(&self, new_user: &User) -> Result<(), UserRepoError> {
-        use crate::db::schema::user::dsl as user_dsl;
-        let mut conn = self.get_connection()?;
+    fn insert(&self, new_user: &User) -> Result<(), RepoError> {
+        let mut conn = self.conn()?;
 
-        diesel::insert_into(user_dsl::user)
+        diesel::insert_into(user::table)
             .values(new_user)
             .execute(&mut conn)
-            .map_err(|e| UserRepoError::Database(e.to_string()))?;
+            .map_err(|e| RepoError::Database(e.to_string()))?;
 
         Ok(())
     }
 
-    fn get_by_status(&self, status: UserStatus) -> Result<Vec<User>, UserRepoError> {
-        use crate::db::schema::user::dsl as user_dsl;
-        let mut conn = self.get_connection()?;
-
+    fn get_by_status(&self, status: UserStatus) -> Result<Vec<User>, RepoError> {
+        let mut conn = self.conn()?;
         let status_code: i32 = status.into();
 
-        let results = user_dsl::user
-            .filter(user_dsl::status.eq(&status_code))
+        let results = user::table
+            .filter(user::status.eq(&status_code))
             .load::<User>(&mut conn)
-            .map_err(|e| UserRepoError::Database(e.to_string()))?;
+            .map_err(|e| RepoError::Database(e.to_string()))?;
 
         Ok(results)
     }
 
-    fn set_status(&self, id: i64, status: UserStatus) -> Result<(), UserRepoError> {
-        use crate::db::schema::user::dsl as user_dsl;
-        let mut conn = self.get_connection()?;
+    fn set_status(&self, id: i64, status: UserStatus) -> Result<(), RepoError> {
+        let mut conn = self.conn()?;
+        let status_code: i32 = status.into();
 
-        let status_code = match status {
-            UserStatus::New => 0,
-            UserStatus::Accepted => 1,
-            UserStatus::Rejected => 2,
-        };
-
-        diesel::update(user_dsl::user.filter(user_dsl::id.eq(&id)))
-            .set(user_dsl::status.eq(&status_code))
+        diesel::update(user::table.filter(user::id.eq(&id)))
+            .set(user::status.eq(&status_code))
             .execute(&mut conn)
-            .map_err(|e| UserRepoError::Database(e.to_string()))?;
+            .map_err(|e| RepoError::Database(e.to_string()))?;
+
+        Ok(())
+    }
+}
+
+impl VlessIdentityRepoTrait for VlessIdentityRepo {
+    fn assign(&self, user_id: i64) -> Result<(), RepoError> {
+        let mut conn = self.conn()?;
+
+        // Find the first unassigned UUID (user_id = 0)
+        let target_uuid = self.get_available_identity().or_else(|_| {
+            self.insert_batch(10, &mut conn)?;
+            self.get_available_identity()
+        })?;
+
+        // Assign it to the user
+        diesel::update(vless_identity::table.filter(vless_identity::uuid.eq(&target_uuid)))
+            .set(vless_identity::user_id.eq(&user_id))
+            .execute(&mut conn)
+            .map_err(|e| RepoError::Database(e.to_string()))?;
 
         Ok(())
     }
 
-    fn get(&self, id: i64) -> Result<User, UserRepoError> {
-        use crate::db::schema::user::dsl as user_dsl;
-        let mut conn = self.get_connection()?;
+    fn get(&self, uuid: &str) -> Result<Option<VlessIdentity>, RepoError> {
+        let mut conn = self.conn()?;
 
-        user_dsl::user
-            .find(&id)
-            .first::<User>(&mut conn)
-            .map_err(|e| UserRepoError::Database(e.to_string()))
+        let result = vless_identity::table
+            .filter(vless_identity::uuid.eq(&uuid))
+            .first::<VlessIdentity>(&mut conn)
+            .optional()
+            .map_err(|e| RepoError::Database(e.to_string()))?;
+
+        Ok(result)
+    }
+
+    fn insert(&self, new_vless_identity: &VlessIdentity) -> Result<(), RepoError> {
+        let mut conn = self.conn()?;
+
+        diesel::insert_into(vless_identity::table)
+            .values(new_vless_identity)
+            .execute(&mut conn)
+            .map_err(|e| RepoError::Database(e.to_string()))?;
+
+        Ok(())
+    }
+
+    fn delete(&self, uuid: &str) -> Result<(), RepoError> {
+        let mut conn = self.conn()?;
+
+        diesel::delete(vless_identity::table.filter(vless_identity::uuid.eq(&uuid)))
+            .execute(&mut conn)
+            .map_err(|e| RepoError::Database(e.to_string()))?;
+
+        Ok(())
+    }
+
+    fn get_by_user_id(&self, user_id: i64) -> Result<Vec<VlessIdentity>, RepoError> {
+        let mut conn = self.conn()?;
+
+        let results = vless_identity::table
+            .filter(vless_identity::user_id.eq(&user_id))
+            .load::<VlessIdentity>(&mut conn)
+            .map_err(|e| RepoError::Database(e.to_string()))?;
+
+        Ok(results)
     }
 }
 
-pub fn init_db(db_location: &str) -> Result<DbPool, Box<dyn std::error::Error + Send + Sync>> {
-    if let Some(parent) = Path::new(db_location).parent() {
-        std::fs::create_dir_all(parent)?;
+impl VlessIdentityRepo {
+    fn insert_batch(&self, count: usize, conn: &mut SqliteConnection) -> Result<(), RepoError> {
+        let identities: Vec<VlessIdentity> = (0..count)
+            .map(|_| VlessIdentity {
+                uuid: uuid::Uuid::new_v4().to_string(),
+                user_id: None,
+            })
+            .collect();
+
+        diesel::insert_into(vless_identity::table)
+            .values(&identities)
+            .execute(conn)
+            .map_err(|e| RepoError::Database(e.to_string()))?;
+
+        Ok(())
     }
 
-    let manager = ConnectionManager::<SqliteConnection>::new(db_location);
-    let pool = Pool::builder()
-        .max_size(1) // SQLite doesn't support multiple writers
-        .build(manager)?;
+    fn get_available_identity(&self) -> Result<String, RepoError> {
+        let mut conn = self.conn()?;
 
-    // Run migrations
-    let mut conn = pool.get()?;
-    conn.run_pending_migrations(MIGRATIONS)
-        .map_err(|e| e.to_string())?;
-
-    Ok(pool)
+        vless_identity::table
+            .filter(vless_identity::user_id.is_null())
+            .order(vless_identity::uuid.asc())
+            .select(vless_identity::uuid)
+            .first::<String>(&mut conn)
+            .map_err(|e| match e {
+                diesel::NotFound => RepoError::NotFound(e.to_string()),
+                _ => RepoError::Database(e.to_string()),
+            })
+    }
 }

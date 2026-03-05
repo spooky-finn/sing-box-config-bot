@@ -5,14 +5,24 @@ mod ports;
 mod service;
 mod utils;
 
-use std::{error::Error, sync::Arc};
+use std::sync::Arc;
 
-use adapters::db::{init_db, UserRepo};
+use adapters::db::UserRepo;
 use config::AppConfig;
 use service::handle_msg::HandleMsgService;
-use teloxide::{prelude::*, types::Message};
+use teloxide::{macros::BotCommands, prelude::*, types::Message};
 use tracing::{error, info};
 use utils::logger;
+
+use crate::adapters::db::VlessIdentityRepo;
+
+pub type Error = Box<dyn std::error::Error + Send + Sync>;
+
+#[derive(BotCommands, Debug, Clone)]
+#[command()]
+enum BotCommands {
+    Start,
+}
 
 #[tokio::main]
 async fn main() {
@@ -24,45 +34,60 @@ async fn main() {
         error!(%panic_info, "Unhandled panic");
     }));
 
-    let pool = init_db(&config.db_location).expect("Failed to initialize database");
-    let user_repo = Arc::new(UserRepo::new(pool));
-
-    let handle_msg_service = Arc::new(HandleMsgService::new(user_repo, config.clone()));
-
+    let pool = db::connect(&config.db_location).expect("Failed to initialize database");
+    let user_repo = Arc::new(UserRepo::new(pool.clone()));
+    let vless_identity_repo = Arc::new(VlessIdentityRepo::new(pool.clone()));
+    let handle_msg_service = Arc::new(HandleMsgService::new(
+        user_repo,
+        vless_identity_repo,
+        config.clone(),
+    ));
     let bot = Bot::new(config.tg_bot_token);
 
     let handler = dptree::entry()
-        .branch(Update::filter_message().endpoint({
-            let service = handle_msg_service.clone();
-            move |msg: Message| {
-                let service = service.clone();
-                async move {
-                    if msg.from.as_ref().map(|u| u.is_bot).unwrap_or(true) {
-                        return Ok(());
-                    }
-                    if let Err(e) = service.handle_msg(&msg).await {
-                        error!(error = %e, "Error handling message");
-                    }
-                    Ok::<(), Box<dyn Error + Send + Sync>>(())
-                }
-            }
-        }))
-        .branch(Update::filter_callback_query().endpoint({
-            let service = handle_msg_service.clone();
-            move |query: teloxide::types::CallbackQuery| {
-                let service = service.clone();
-                async move {
-                    if let Err(e) = service.handle_callback(&query).await {
-                        error!(error = %e, "Error handling callback");
-                    }
-                    Ok::<(), Box<dyn Error + Send + Sync>>(())
-                }
-            }
-        }));
+        .branch(
+            Update::filter_message()
+                .filter_command::<BotCommands>()
+                .endpoint(handle_command),
+        )
+        .branch(Update::filter_message().endpoint(handle_message))
+        .branch(Update::filter_callback_query().endpoint(handle_callback));
 
     Dispatcher::builder(bot, handler)
+        .dependencies(dptree::deps![handle_msg_service])
         .enable_ctrlc_handler()
         .build()
         .dispatch()
         .await;
+}
+
+async fn handle_command(
+    _cmd: BotCommands,
+    msg: Message,
+    service: Arc<HandleMsgService>,
+) -> Result<(), teloxide::RequestError> {
+    if let Err(e) = service.handle_msg(&msg).await {
+        error!(error = %e, "Error handling /start command");
+    }
+    Ok(())
+}
+
+async fn handle_message(
+    msg: Message,
+    service: Arc<HandleMsgService>,
+) -> Result<(), teloxide::RequestError> {
+    if let Err(e) = service.handle_msg(&msg).await {
+        error!(error = %e, "Error handling message");
+    }
+    Ok(())
+}
+
+async fn handle_callback(
+    query: CallbackQuery,
+    service: Arc<HandleMsgService>,
+) -> Result<(), teloxide::RequestError> {
+    if let Err(e) = service.handle_callback(&query).await {
+        error!(error = %e, "Error handling callback");
+    }
+    Ok(())
 }

@@ -7,15 +7,15 @@ mod utils;
 
 use std::fs;
 
-use adapters::db::{init_db, UserRepo};
+use adapters::db::UserRepo;
 use config::AppConfig;
 use diesel::prelude::*;
-use ports::user::IUserRepo;
+use ports::user::UserRepoTrait;
 use serde::{Deserialize, Serialize};
 use tracing::{error, info};
 use utils::logger;
 
-use crate::db::models::VpnUuid;
+use crate::db::models::VlessIdentity;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct SingBoxUser {
@@ -91,7 +91,7 @@ async fn main() {
     logger::init(&config.log_level, config.log_disable_timestamp);
     info!("Generating sing-box server config");
 
-    let pool = init_db(&config.db_location).expect("Failed to initialize database");
+    let pool = db::connect(&config.db_location).expect("Failed to initialize database");
     let user_repo = UserRepo::new(pool);
 
     // Get all accepted users
@@ -100,18 +100,16 @@ async fn main() {
         .expect("Failed to get accepted users");
 
     // Get VPN UUIDs for accepted users
-    let mut conn = user_repo
-        .get_connection()
-        .expect("Failed to get database connection");
+    let mut conn = user_repo.conn().expect("Failed to get database connection");
 
     let mut users: Vec<SingBoxUser> = Vec::new();
 
     for user in &accepted_users {
         // Get or create UUID for this user
-        use crate::db::schema::vpn_uuid::dsl as vpn_dsl;
-        let uuid_record = vpn_dsl::vpn_uuid
-            .filter(vpn_dsl::user_id.eq(user.id))
-            .first::<VpnUuid>(&mut conn)
+        use crate::db::schema::vless_identity::dsl as vless_dsl;
+        let uuid_record = vless_dsl::vless_identity
+            .filter(vless_dsl::user_id.eq(user.id))
+            .first::<VlessIdentity>(&mut conn)
             .optional();
 
         match uuid_record {
@@ -124,14 +122,14 @@ async fn main() {
             Ok(None) => {
                 // Generate new UUID for this user
                 let new_uuid = uuid::Uuid::new_v4().to_string();
-                let new_vpn_uuid = VpnUuid {
+                let new_vless_identity = VlessIdentity {
                     uuid: new_uuid.clone(),
-                    user_id: user.id,
+                    user_id: Some(user.id),
                 };
 
                 // Insert the new UUID
-                diesel::insert_into(vpn_dsl::vpn_uuid)
-                    .values(&new_vpn_uuid)
+                diesel::insert_into(vless_dsl::vless_identity)
+                    .values(&new_vless_identity)
                     .execute(&mut conn)
                     .expect("Failed to insert VPN UUID");
 

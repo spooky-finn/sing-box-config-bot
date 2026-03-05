@@ -6,10 +6,10 @@ CREATE TABLE user (
     created_at TEXT NOT NULL
 );
 
-CREATE TABLE vpn_uuid (
+CREATE TABLE vless_identity (
     uuid TEXT PRIMARY KEY NOT NULL,
-    user_id BIGINT NOT NULL REFERENCES user(id)
+    user_id BIGINT REFERENCES user(id)
 );
 
-CREATE INDEX idx_vpn_uuid_uuid ON vpn_uuid(uuid);
-CREATE INDEX idx_vpn_uuid_user_id ON vpn_uuid(user_id);
+CREATE INDEX idx_vless_identity_uuid ON vless_identity(uuid);
+CREATE INDEX idx_vless_identity_user_id ON vless_identity(user_id);
