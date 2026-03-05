@@ -4,14 +4,13 @@ mod ports;
 mod service;
 mod utils;
 
+use std::sync::Arc;
+
 use adapters::db::{init_db, UserRepo};
 use service::{admin::AdminService, handle_msg::HandleMsgService};
-use std::sync::Arc;
-use teloxide::prelude::*;
-use teloxide::types::Message;
+use teloxide::{prelude::*, types::Message};
 use tracing::{error, info};
-use utils::env::AppConfig;
-use utils::log::init_logger;
+use utils::{env::AppConfig, log::init_logger};
 
 #[tokio::main]
 async fn main() {
@@ -35,10 +34,8 @@ async fn main() {
 
     let bot = Bot::new(config.tg_bot_token);
 
-    info!("Bot started successfully");
-
-    let handler = Update::filter_message()
-        .branch(dptree::endpoint({
+    let handler = dptree::entry()
+        .branch(Update::filter_message().endpoint({
             let service = handle_msg_service.clone();
             move |msg: Message| {
                 let service = service.clone();
@@ -53,7 +50,7 @@ async fn main() {
                 }
             }
         }))
-        .branch(Update::filter_callback_query().branch(dptree::endpoint({
+        .branch(Update::filter_callback_query().endpoint({
             let service = handle_msg_service.clone();
             move |query: teloxide::types::CallbackQuery| {
                 let service = service.clone();
@@ -67,7 +64,7 @@ async fn main() {
                     Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
                 }
             }
-        })));
+        }));
 
     Dispatcher::builder(bot, handler)
         .enable_ctrlc_handler()

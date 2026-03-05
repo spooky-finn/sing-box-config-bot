@@ -36,6 +36,8 @@ impl HandleMsgService {
         &self,
         query: &CallbackQuery,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let user_id = query.from.id.0 as i64;
+        info!(user_id = user_id, "Handling callback");
         if query.from.is_bot {
             return Ok(());
         }
@@ -44,6 +46,10 @@ impl HandleMsgService {
             self.admin_service.handle_admin_callback(&cmd).await?;
         }
 
+        // Acknowledge the callback query to remove the loading icon from the client
+        teloxide::Bot::from_env()
+            .answer_callback_query(query.id.clone())
+            .await?;
         Ok(())
     }
 
