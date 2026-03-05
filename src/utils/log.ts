@@ -34,7 +34,7 @@ export function initLogger(level = "info", disableTimestamp?: string) {
 }
 
 // Export proxy object that warns if not initialized
-export const log = new Proxy({} as ReturnType<typeof pino>, {
+export const logger = new Proxy({} as ReturnType<typeof pino>, {
 	get(_target, prop) {
 		if (!logInstance) {
 			throw new Error("Logger not initialized. Call initLogger() first.");

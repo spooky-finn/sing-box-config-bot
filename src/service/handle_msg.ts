@@ -1,6 +1,8 @@
 import { randomBytes } from "node:crypto";
+import { UserStatus } from "db/enums.js";
 import type TelegramBot from "node-telegram-bot-api";
 import type { IUserRepo, User } from "#root/ports/user.js";
+import { logger } from "#root/utils/log.js";
 import { type AdminService, InvationCmd } from "./admin.js";
 
 interface Config {
@@ -22,8 +24,13 @@ export class HandleMsgService {
 			throw new Error("User ID is required");
 		}
 
-		const isAdminCallback = await this.adminService.handleAdminCallback(msg);
-		if (isAdminCallback) return;
+		const isAdminCmd = this.adminService.isAdminCallback(msg);
+		logger.debug({ msg, isAdminCmd }, "new msg");
+
+		if (isAdminCmd) {
+			await this.adminService.handleAdminCallback(isAdminCmd);
+			return;
+		}
 
 		const user = await this.userRepo.select(userId);
 		if (!user) {
@@ -38,7 +45,7 @@ export class HandleMsgService {
 		await this.userRepo.insert({
 			id: user.id,
 			username: user.username || "",
-			status: DB.UserStatus.New,
+			status: UserStatus.New,
 			auth_key,
 			created_at: new Date().toISOString(),
 		});
@@ -46,14 +53,14 @@ export class HandleMsgService {
 	}
 
 	async sendStatus(user: User) {
-		if (user.status === DB.UserStatus.New) {
+		if (user.status === UserStatus.New) {
 			this.bot.sendMessage(
 				user.id,
 				`Администратор скоро рассмотрит вашу заявку`,
 			);
 			return;
 		}
-		if (user.status === DB.UserStatus.Accepted) {
+		if (user.status === UserStatus.Accepted) {
 			const configURL = this.getConfigLink(user);
 			this.bot.sendMessage(
 				user.id,
@@ -61,7 +68,7 @@ export class HandleMsgService {
 			);
 			return;
 		}
-		if (user.status === DB.UserStatus.Rejected) {
+		if (user.status === UserStatus.Rejected) {
 			this.bot.sendMessage(user.id, `Ваша заявка отклонена`);
 			return;
 		}
@@ -82,14 +89,14 @@ export class HandleMsgService {
 							text: "Accept",
 							callback_data: new InvationCmd(
 								user.id,
-								DB.UserStatus.Accepted,
+								UserStatus.Accepted,
 							).toString(),
 						},
 						{
 							text: "Reject",
 							callback_data: new InvationCmd(
 								user.id,
-								DB.UserStatus.Rejected,
+								UserStatus.Rejected,
 							).toString(),
 						},
 					],

@@ -4,7 +4,7 @@ import { validateAppEnv } from "./env.js";
 import { AdminService } from "./service/admin.js";
 import { HandleMsgService } from "./service/handle_msg.js";
 import { initDB } from "./utils/db.js";
-import { initLogger, log } from "./utils/log.js";
+import { initLogger, logger } from "./utils/log.js";
 
 async function main() {
 	// Validate environment variables using typia
@@ -12,10 +12,10 @@ async function main() {
 	initLogger(env.LogLevel, env.LogDisableTimestamp);
 
 	process.on("unhandledRejection", (err) => {
-		log.error(err, "Unhandled rejection");
+		logger.error(err, "Unhandled rejection");
 	});
 
-	log.info("Starting server");
+	logger.info("Starting server");
 	const db = initDB(env.DbLocation);
 
 	const bot = new TelegramBot(env.TgBotToken, { polling: true });

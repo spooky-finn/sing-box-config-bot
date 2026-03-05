@@ -6,12 +6,6 @@ declare global {
 			user: UserTable;
 		}
 
-		enum UserStatus {
-			New = 0,
-			Accepted = 1,
-			Rejected = 2,
-		}
-
 		export interface UserTable {
 			id: number;
 			username: string;

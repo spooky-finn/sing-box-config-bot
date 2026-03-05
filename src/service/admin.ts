@@ -1,4 +1,6 @@
+import { UserStatus } from "db/enums";
 import type TelegramBot from "node-telegram-bot-api";
+import { logger } from "#root/ioc.js";
 import type { IUserRepo } from "#root/ports/user.js";
 
 const InvationCmdOpCode = "invate_confirm";
@@ -6,7 +8,7 @@ const InvationCmdOpCode = "invate_confirm";
 export class InvationCmd {
 	constructor(
 		readonly userId: number,
-		readonly status: DB.UserStatus,
+		readonly status: UserStatus,
 	) {}
 
 	static parse(text: string) {
@@ -14,7 +16,7 @@ export class InvationCmd {
 		if (opcode !== InvationCmdOpCode) {
 			throw Error("Wrong operation code");
 		}
-		if (!Object.values(DB.UserStatus).includes(status)) {
+		if (!Object.values(UserStatus).includes(status)) {
 			throw Error("Invalid user status");
 		}
 		const uid = Number(userId);
@@ -35,13 +37,20 @@ export class AdminService {
 		readonly adminId: string,
 	) {}
 
-	async handleAdminCallback(msg: TelegramBot.Message): Promise<boolean> {
+	isAdminCallback(msg: TelegramBot.Message): InvationCmd | false {
 		if (msg.from?.id?.toString() !== this.adminId || !msg.text) {
 			return false;
 		}
 
-		const cmd = InvationCmd.parse(msg.text);
+		try {
+			return InvationCmd.parse(msg.text);
+		} catch (error) {
+			return false;
+		}
+	}
+
+	async handleAdminCallback(cmd: InvationCmd) {
 		await this.userRepo.updateStatus(cmd.userId, cmd.status);
-		return false;
+		logger.info(cmd, "adming callback handled");
 	}
 }

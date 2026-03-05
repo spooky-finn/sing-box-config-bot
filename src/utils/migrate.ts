@@ -6,14 +6,14 @@ import {
 	type MigrationResultSet,
 	Migrator,
 } from "kysely";
-import { log } from "./log.js";
+import { logger } from "./log.js";
 
 async function main(
 	db: Kysely<any>,
 	migrationsPath: string,
 	downgrade = false,
 ) {
-	log.info("Migrator: checking for migrations");
+	logger.info("Migrator: checking for migrations");
 
 	const provider = new FileMigrationProvider({
 		fs: fs.promises,
@@ -36,14 +36,14 @@ async function main(
 	const action = downgrade ? "reverted" : "applied";
 	results?.forEach((it) => {
 		if (it.status === "Success") {
-			log.info(`Migration "${it.migrationName}" was ${action}`);
+			logger.info(`Migration "${it.migrationName}" was ${action}`);
 		} else if (it.status === "Error") {
-			log.error(`Failed to execute migration "${it.migrationName}"`);
+			logger.error(`Failed to execute migration "${it.migrationName}"`);
 		}
 	});
 
 	if (error) {
-		log.error(error, "Failed to migrate");
+		logger.error(error, "Failed to migrate");
 		process.exit(1);
 	}
 }
@@ -55,9 +55,9 @@ export async function migrateDB(
 ) {
 	try {
 		await main(db, migrationsPath, downgrade);
-		log.info("Migrator finished");
+		logger.info("Migrator finished");
 	} catch (err) {
-		log.error(err, "Migration failed:");
+		logger.error(err, "Migration failed:");
 		process.exit(1);
 	}
 }
