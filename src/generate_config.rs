@@ -1,18 +1,19 @@
+// generate sing box proxy config
 mod adapters;
 mod db;
 mod ports;
 mod utils;
 
-use adapters::db::{init_db, DieselUserRepo};
+use std::fs;
+
+use adapters::db::{init_db, UserRepo};
 use diesel::prelude::*;
 use ports::user::IUserRepo;
 use serde::{Deserialize, Serialize};
-use std::fs;
 use tracing::{error, info};
-use utils::env::AppConfig;
-use utils::log::init_logger;
+use utils::{env::AppConfig, log::init_logger};
 
-use crate::db::VpnUuid;
+use crate::db::models::VpnUuid;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct SingBoxUser {
@@ -90,7 +91,7 @@ async fn main() {
 
     // Initialize database
     let pool = init_db(&config.db_location).expect("Failed to initialize database");
-    let user_repo = DieselUserRepo::new(pool);
+    let user_repo = UserRepo::new(pool);
 
     // Get all accepted users
     let accepted_users = user_repo

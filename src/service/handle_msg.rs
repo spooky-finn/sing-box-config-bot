@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use rand::Rng;
 use teloxide::{
     prelude::*,
     types::{ChatId, InlineKeyboardButton, InlineKeyboardMarkup, Message, User as TgUser},
@@ -9,7 +8,7 @@ use teloxide::{
 use tracing::info;
 
 use crate::{
-    db::{enums::UserStatus, NewUser, User},
+    db::{enums::UserStatus, models::User},
     ports::user::IUserRepo,
     service::admin::{AdminService, InvitationCmd},
 };
@@ -79,12 +78,10 @@ impl HandleMsgService {
         &self,
         user: &TgUser,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let auth_key = self.generate_auth_key();
-        let new_user = NewUser {
+        let new_user = User {
             id: user.id.0 as i64,
             username: user.username.clone().unwrap_or_default(),
             status: UserStatus::New as i32,
-            auth_key,
             created_at: chrono::Utc::now().to_rfc3339(),
         };
 
@@ -131,13 +128,6 @@ impl HandleMsgService {
     fn get_config_link(&self, user: &User) -> String {
         let base = self.client_config_endpoint.trim_end_matches('/');
         format!("{}/{}", base, user.id)
-    }
-
-    fn generate_auth_key(&self) -> String {
-        let mut rng = rand::rng();
-        let mut bytes = [0u8; 32];
-        rng.fill_bytes(&mut bytes);
-        hex::encode(bytes)
     }
 
     async fn send_message_to_admin(

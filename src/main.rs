@@ -4,7 +4,7 @@ mod ports;
 mod service;
 mod utils;
 
-use adapters::db::{init_db, DieselUserRepo};
+use adapters::db::{init_db, UserRepo};
 use service::{admin::AdminService, handle_msg::HandleMsgService};
 use std::sync::Arc;
 use teloxide::prelude::*;
@@ -24,7 +24,7 @@ async fn main() {
     }));
 
     let pool = init_db(&config.db_location).expect("Failed to initialize database");
-    let user_repo = Arc::new(DieselUserRepo::new(pool));
+    let user_repo = Arc::new(UserRepo::new(pool));
 
     let admin_service = AdminService::new(user_repo.clone(), config.tg_admin_id);
     let handle_msg_service = Arc::new(HandleMsgService::new(

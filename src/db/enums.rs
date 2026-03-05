@@ -41,3 +41,14 @@ impl UserStatus {
         }
     }
 }
+
+impl From<UserStatus> for i32 {
+    fn from(value: UserStatus) -> Self {
+        let status_code = match value {
+            UserStatus::New => 0,
+            UserStatus::Accepted => 1,
+            UserStatus::Rejected => 2,
+        };
+        status_code
+    }
+}

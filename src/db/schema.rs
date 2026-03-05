@@ -5,7 +5,6 @@ diesel::table! {
         id -> BigInt,
         username -> Text,
         status -> Integer,
-        auth_key -> Text,
         created_at -> Text,
     }
 }

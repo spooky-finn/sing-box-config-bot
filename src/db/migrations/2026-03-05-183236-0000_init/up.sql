@@ -3,7 +3,6 @@ CREATE TABLE user (
     id BIGINT PRIMARY KEY NOT NULL,
     username TEXT NOT NULL,
     status INTEGER NOT NULL,
-    auth_key TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
 

@@ -8,7 +8,7 @@ use diesel::{
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 
 use crate::{
-    db::{enums::UserStatus, NewUser, User},
+    db::{enums::UserStatus, models::User},
     ports::user::{IUserRepo, UserRepoError},
 };
 
@@ -16,11 +16,11 @@ pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("src/db/migrations"
 
 pub type DbPool = Pool<ConnectionManager<SqliteConnection>>;
 
-pub struct DieselUserRepo {
+pub struct UserRepo {
     pool: DbPool,
 }
 
-impl DieselUserRepo {
+impl UserRepo {
     pub fn new(pool: DbPool) -> Self {
         Self { pool }
     }
@@ -35,7 +35,7 @@ impl DieselUserRepo {
     }
 }
 
-impl IUserRepo for DieselUserRepo {
+impl IUserRepo for UserRepo {
     fn select(&self, id: i64) -> Result<Option<User>, UserRepoError> {
         use crate::db::schema::user::dsl as user_dsl;
         let mut conn = self.get_connection()?;
@@ -49,7 +49,7 @@ impl IUserRepo for DieselUserRepo {
         Ok(result)
     }
 
-    fn insert(&self, new_user: &NewUser) -> Result<(), UserRepoError> {
+    fn insert(&self, new_user: &User) -> Result<(), UserRepoError> {
         use crate::db::schema::user::dsl as user_dsl;
         let mut conn = self.get_connection()?;
 
@@ -65,11 +65,7 @@ impl IUserRepo for DieselUserRepo {
         use crate::db::schema::user::dsl as user_dsl;
         let mut conn = self.get_connection()?;
 
-        let status_code = match status {
-            UserStatus::New => 0,
-            UserStatus::Accepted => 1,
-            UserStatus::Rejected => 2,
-        };
+        let status_code: i32 = status.into();
 
         let results = user_dsl::user
             .filter(user_dsl::status.eq(&status_code))
