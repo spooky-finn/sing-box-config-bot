@@ -60,11 +60,11 @@ path = "src/main.rs"
 
 [[bin]]
 name = "gen_node_config"
-path = "src/bin/gen_node_config.rs"
+path = "src/gen_node_config.rs"
 
 [[bin]]
 name = "deploy"
-path = "src/bin/deploy/main.rs"
+path = "src/deploy/main.rs"
 
 # Release optimizations for smaller, faster binaries
 [profile.release]
