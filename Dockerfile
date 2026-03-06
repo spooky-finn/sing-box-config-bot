@@ -1,60 +1,43 @@
 FROM rust:1.94-slim AS builder
 WORKDIR /app
 
-# Install build dependencies
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
     cmake \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy manifests for dependency caching
+# dependency cache
 COPY Cargo.toml Cargo.lock ./
 
-# Create dummy source for dependency build
-RUN mkdir -p src/bin && \
-    echo "fn main() {}" > src/main.rs && \
-    for bin in gen_node_config deploy; do \
-        mkdir -p src/bin/$bin && \
-        echo "fn main() {}" > src/bin/$bin/main.rs; \
-    done && \
-    mkdir -p src/adapters src/db src/domain src/service src/utils && \
-    for f in adapters db domain service utils; do \
-        echo "pub mod $f {}" >> src/lib.rs; \
-    done
+RUN mkdir src && echo "fn main() {}" > src/main.rs
+RUN cargo build --release --locked
+RUN rm -rf src
 
-# Build dependencies only (cached layer)
-RUN cargo build --release && rm -rf src
-
-# Copy actual source code
+# real sources
 COPY . .
 
-# Build the application
-RUN cargo build --release
+RUN cargo build --release --locked
 
-# Runtime stage
+
 FROM debian:bookworm-slim
 
 WORKDIR /app
 
-# Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     openssl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy binary from builder
-COPY --from=builder /app/target/release/bot .
+COPY --from=builder /app/target/release/bot /usr/local/bin/bot
 
-# Copy config files
-COPY config/domains.json ./config/
+COPY config/domains.json /app/config/domains.json
 
-# Create .env file location
-RUN mkdir -p /app/.env
+# directory for persistent data
+RUN mkdir -p /app/data
 
-# Create volume mount point for database
-VOLUME /app/sing-box-orchestrator.db
+VOLUME /app/data
 
 EXPOSE 8080
 
-CMD ["./bot"]
+CMD ["bot"]
