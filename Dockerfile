@@ -1,6 +1,4 @@
-# Build stage
-FROM rust:1.85-slim AS builder
-
+FROM rust:1.94-slim AS builder
 WORKDIR /app
 
 # Install build dependencies
@@ -53,6 +51,9 @@ COPY config/domains.json ./config/
 
 # Create .env file location
 RUN mkdir -p /app/.env
+
+# Create volume mount point for database
+VOLUME /app/sing-box-orchestrator.db
 
 EXPOSE 8080
 
