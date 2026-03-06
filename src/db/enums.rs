@@ -35,6 +35,14 @@ impl UserStatus {
             UserStatus::Rejected => "Rejected",
         }
     }
+
+    pub fn as_db_str(&self) -> &'static str {
+        match self {
+            UserStatus::New => "new",
+            UserStatus::Accepted => "accepted",
+            UserStatus::Rejected => "rejected",
+        }
+    }
 }
 
 impl From<UserStatus> for i32 {

@@ -1,6 +1,5 @@
 use crate::{db::models::VlessIdentity, ports::RepoError};
 
-#[allow(dead_code)]
 pub trait VlessIdentityRepoTrait: Send + Sync {
     fn assign(&self, user_id: i64) -> Result<(), RepoError>;
     fn get(&self, uuid: &str) -> Result<Option<VlessIdentity>, RepoError>;

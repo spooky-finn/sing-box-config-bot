@@ -19,7 +19,6 @@ pub fn connect(db_location: &str) -> Result<DbPool, Box<dyn std::error::Error + 
         .connection_timeout(Duration::from_secs(10))
         .build(manager)?;
 
-    // Run migrations
     let mut conn = pool.get()?;
     conn.run_pending_migrations(MIGRATIONS)
         .map_err(|e| e.to_string())?;

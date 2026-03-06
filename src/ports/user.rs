@@ -9,4 +9,5 @@ pub trait UserRepoTrait: Send + Sync {
     fn get_by_status(&self, status: UserStatus) -> Result<Vec<User>, RepoError>;
     fn insert(&self, user: &User) -> Result<(), RepoError>;
     fn set_status(&self, id: i64, status: UserStatus) -> Result<(), RepoError>;
+    fn get_status(&self, id: i64) -> Result<String, RepoError>;
 }

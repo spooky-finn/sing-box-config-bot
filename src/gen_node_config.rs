@@ -1,24 +1,22 @@
 // generate sing box proxy config
-mod adapters;
-mod config;
-mod db;
-mod ports;
-mod singbox;
-mod utils;
-
+use serde::{Deserialize, Serialize};
+use sing_box_config_bot::{
+    adapters::VlessIdentityRepo,
+    config::AppConfig,
+    connect,
+    ports::vless_identity::VlessIdentityRepoTrait,
+    singbox::server::{Inbound, Outbound, Reality, RealityHandshake, ServerConfig, Tls, VlessUser},
+    singbox::shared::{DnsConfig, DnsServer, LogConfig},
+    utils::logger,
+};
 use std::fs;
 use tracing::info;
 
-use crate::{
-    adapters::db::VlessIdentityRepo,
-    config::AppConfig,
-    ports::vless_identity::VlessIdentityRepoTrait,
-    singbox::{
-        server::{Inbound, Outbound, Reality, RealityHandshake, ServerConfig, Tls, VlessUser},
-        shared::{DnsConfig, DnsServer, LogConfig},
-    },
-    utils::logger,
-};
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DnsServerMinimal {
+    pub tag: String,
+    pub address: String,
+}
 
 #[tokio::main]
 async fn main() {
@@ -26,7 +24,7 @@ async fn main() {
     logger::init(&config.log_level, config.log_disable_timestamp);
     info!("Generating sing-box server config");
 
-    let pool = db::connect(&config.db_location).expect("Failed to initialize database");
+    let pool = connect(&config.db_location).expect("Failed to initialize database");
     let vless_identity_repo = VlessIdentityRepo::new(pool.clone());
     let identities = vless_identity_repo.get_all().unwrap();
     let users: Vec<VlessUser> = identities
@@ -47,7 +45,12 @@ async fn main() {
             servers: vec![DnsServer {
                 tag: "cf".to_string(),
                 address: "1.0.0.1".to_string(),
+                address_resolver: None,
+                strategy: None,
+                detour: None,
             }],
+            rules: None,
+            final_field: None,
         },
         inbounds: vec![Inbound {
             listen: "::".to_string(),

@@ -14,6 +14,7 @@ target
 
 # Generated config files
 config/sing-box.server.json
+config/sing-box.client.json
 
 # Build artifacts
 **/*.rs.bk

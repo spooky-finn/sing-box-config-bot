@@ -14,24 +14,31 @@ A Telegram bot for managing sing-box VPN configurations
 ## Project Structure
 
 ```
-rust/
+sing-box-config-bot/
 ├── src/
-│   ├── adapters/       # External implementations (database, etc.)
-│   ├── db/             # Database schema and types
-│   │   ├── enums.rs    # User status enum
-│   │   ├── mod.rs      # User and VpnUuid models
-│   │   └── schema.rs   # Diesel schema definitions
-│   ├── ports/          # Interface definitions (ports)
-│   ├── service/        # Business logic
-│   ├── utils/          # Utilities (logging, config)
-│   ├── main.rs         # Bot entry point
-│   ├── deploy.rs       # Deployment utility
-│   └── generate_config.rs  # Config generator
-├── db/
-│   └── migrations/     # Database migrations
+│   ├── adapters/           # Database repository implementations
+│   │   ├── mod.rs
+│   │   ├── user_repo.rs           # User repository
+│   │   └── vless_identity_repo.rs # VLESS identity repository
+│   ├── config/             # Configuration structures
+│   │   └── deploy_config.rs       # Multi-server deploy config
+│   ├── db/                 # Database schema and models
+│   ├── domain/             # Business logic (extracted from utils)
+│   │   ├── mod.rs
+│   │   ├── config_generator.rs    # sing-box config generation
+│   │   └── routing_config.rs      # Routing rules configuration
+│   ├── ports/              # Interface definitions (traits)
+│   ├── service/            # Application services
+│   ├── singbox/            # sing-box data structures
+│   ├── utils/              # Technical utilities (logging)
+│   ├── main.rs             # Bot + HTTP server entry point
+│   ├── lib.rs              # Library root - exports public API
+│   ├── deploy.rs           # Multi-machine deployment utility
+│   ├── gen_client_config.rs # Client config generator
+│   └── gen_node_config.rs   # Server config generator
 ├── config/
-│   ├── sing-box.template.json  # Template config
-│   └── sing-box.server.json    # Generated server config (gitignored)
+│   ├── domains.json        # Routing rules configuration
+│   └── ...
 ├── Cargo.toml
 └── .env.example
 ```
@@ -69,10 +76,30 @@ rust/
 |----------|-------------|----------|
 | `TG_BOT_TOKEN` | Telegram bot token | Yes |
 | `TG_ADMIN_ID` | Telegram admin user ID | Yes |
-| `CLIENT_CONFIG_ENDPOINT` | Base URL for config downloads | Yes |
+| `CLIENT_CONFIG_ENDPOINT` | Base URL for config downloads (e.g., `https://example.com`) | Yes |
 | `DB_LOCATION` | SQLite database path | No (default: `./db/vpn_signaling_server.db`) |
 | `LOG_LEVEL` | Logging level | No (default: `info`) |
 | `LOG_DISABLE_TIMESTAMP` | Disable timestamps in logs | No (default: `false`) |
+
+### Routing Configuration
+
+The `config/domains.json` file contains routing rules for the client configuration:
+
+```json
+{
+  "dns_proxy_keywords": ["example.com"],
+  "dns_direct_keywords": ["localhost"],
+  "dns_direct_regex": [".*\\.ru$"],
+  "direct_route_keywords": ["telegram.org"]
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `dns_proxy_keywords` | Domains that should use proxy DNS |
+| `dns_direct_keywords` | Domains that should use direct DNS |
+| `dns_direct_regex` | Regex patterns for direct DNS routing |
+| `direct_route_keywords` | Domains that bypass the proxy |
 
 ### Sing-Box Server Configuration
 
@@ -95,11 +122,17 @@ rust/
 
 ## Usage
 
-### Running the Bot
+### Running the Bot and Config Server
+
+The bot and HTTP config server run in a single process:
 
 ```bash
 cargo run --bin bot
 ```
+
+The HTTP server serves client configurations at `/:uuid` endpoint on the port specified by `SING_BOX_SERVER_PORT` (default: 443).
+
+Users access their config via: `http://<server>:<port>/<uuid>`
 
 Or in release mode:
 
@@ -107,56 +140,54 @@ Or in release mode:
 cargo run --release --bin bot
 ```
 
+### Generating Client Config (Offline)
+
+Generate a client config file locally:
+
+```bash
+cargo run --bin gen_client_config
+```
+
+The config is written to `config/sing-box.client.json`.
+
 ### Generating Server Config
 
 This generates a sing-box server config with all accepted users:
 
 ```bash
-cargo run --bin generate-config
+cargo run --bin gen_node_config
 ```
 
 The config is written to `config/sing-box.server.json`.
 
-### Deploying to Remote Server
+### Deploying to Remote Servers
 
-This uploads the generated config to the remote server and restarts sing-box:
+Deploys the generated config to multiple remote servers in parallel and restarts sing-box:
 
 ```bash
 cargo run --bin deploy
 ```
 
+**Multi-Server Configuration:**
+
+Set `DEPLOY_SERVERS` in your `.env` file with comma-separated server definitions:
+
+```bash
+# Format: name:user:host:port
+DEPLOY_SERVERS="server1:root:192.168.1.10:22,server2:root:192.168.1.11:22,server3:admin:10.0.0.5:22"
+```
+
+The deploy utility will:
+1. Connect to all servers in parallel via SSH
+2. Execute the deploy command on each server
+3. Display individual results and a summary
+
 ### Complete Workflow
 
-1. **Start the bot**: Users can register via Telegram
+1. **Start the bot**: Users can register via Telegram (HTTP server also starts)
 2. **Admin approves users**: Admin clicks "Accept" in Telegram
-3. **Generate config**: Run `cargo run --bin generate-config` to create server config with all accepted users
+3. **Generate server config**: Run `cargo run --bin gen_node_config` to create server config
 4. **Deploy**: Run `cargo run --bin deploy` to upload config and restart sing-box on the server
-
-## Development
-
-### Format code
-
-```bash
-cargo fmt
-```
-
-### Check for errors
-
-```bash
-cargo check
-```
-
-### Run tests
-
-```bash
-cargo test
-```
-
-### Build for production
-
-```bash
-cargo build --release
-```
 
 ## Database Schema
 
@@ -167,7 +198,6 @@ cargo build --release
 | id | INTEGER | Telegram user ID (primary key) |
 | username | TEXT | Telegram username |
 | status | INTEGER | 0=New, 1=Accepted, 2=Rejected |
-| auth_key | TEXT | Authentication key |
 | created_at | TEXT | ISO 8601 timestamp |
 
 ### vless_identity table

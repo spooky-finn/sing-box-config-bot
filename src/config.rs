@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -10,12 +8,12 @@ pub enum EnvError {
     Invalid(String, String),
 }
 
-fn get_env(name: &str) -> Result<String, EnvError> {
+pub fn get_env(name: &str) -> Result<String, EnvError> {
     dotenvy::dotenv().ok();
     std::env::var(name).map_err(|_| EnvError::Missing(name.to_string()))
 }
 
-fn get_env_or(name: &str, default: &str) -> String {
+pub fn get_env_or(name: &str, default: &str) -> String {
     dotenvy::dotenv().ok();
     std::env::var(name).unwrap_or_else(|_| default.to_string())
 }
@@ -63,27 +61,6 @@ impl AppConfig {
             sing_box_short_id: get_env("SING_BOX_SHORT_ID")?,
             sing_box_server_name: get_env_or("SING_BOX_SERVER_NAME", "google.com"),
             sing_box_server_port: parse_env_or("SING_BOX_SERVER_PORT", "443"),
-        })
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct DeployConfig {
-    pub deploy_host: String,
-    pub deploy_keyfile: String,
-    pub deploy_user: String,
-    pub deploy_command: String,
-    pub deploy_cwd: String,
-}
-
-impl DeployConfig {
-    pub fn from_env() -> Result<Self, EnvError> {
-        Ok(Self {
-            deploy_host: get_env("DEPLOY_HOST")?,
-            deploy_keyfile: get_env("DEPLOY_KEYFILE")?,
-            deploy_user: get_env("DEPLOY_USER")?,
-            deploy_command: get_env("DEPLOY_COMMAND")?,
-            deploy_cwd: get_env("DEPLOY_CWD")?,
         })
     }
 }
