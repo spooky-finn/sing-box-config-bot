@@ -10,8 +10,10 @@ use sing_box_config_bot::{
     config::AppConfig,
     domain::RoutingConfig,
     generate_config,
+    ports::vless_identity::VlessIdentityRepoTrait,
     service::handle_msg::HandleMsgService,
     utils::logger,
+    RepoError,
 };
 use std::sync::Arc;
 use teloxide::{macros::BotCommands, prelude::*, types::Message};
@@ -29,6 +31,7 @@ enum BotCommands {
 pub struct AppState {
     app_config: AppConfig,
     routing_config: RoutingConfig,
+    vless_identity_repo: Arc<dyn VlessIdentityRepoTrait>,
 }
 
 #[tokio::main]
@@ -60,6 +63,7 @@ async fn main() {
     let app_state = Arc::new(AppState {
         app_config: config.clone(),
         routing_config,
+        vless_identity_repo,
     });
 
     // Build HTTP server for config delivery
@@ -146,6 +150,17 @@ async fn get_config(
     State(state): State<Arc<AppState>>,
     Path(uuid): Path<String>,
 ) -> impl IntoResponse {
+    let exists = match state.vless_identity_repo.get(&uuid) {
+        Ok(v) => v,
+        Err(e) => {
+            error!("Repo error: {}", e);
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+    if exists.is_none() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+
     match generate_config(&state.app_config, &state.routing_config, &uuid) {
         Ok(config_json) => Json(config_json).into_response(),
         Err(e) => {
