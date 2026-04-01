@@ -1,170 +1,83 @@
 use axum::{
+    Router,
     extract::{Path, State},
     http::StatusCode,
-    response::IntoResponse,
+    response::{Html, IntoResponse},
     routing::get,
-    Json, Router,
 };
-use sing_box_config_bot::{
-    adapters::{UserRepo, VlessIdentityRepo},
-    config::AppConfig,
-    domain::RoutingConfig,
-    generate_config,
-    ports::vless_identity::VlessIdentityRepoTrait,
-    service::handle_msg::HandleMsgService,
-    utils::logger,
-};
-use std::sync::Arc;
-use teloxide::{macros::BotCommands, prelude::*, types::Message};
+use std::{path::PathBuf, sync::Arc};
 use tower_http::trace::TraceLayer;
-use tracing::{error, info};
 
-pub type Error = Box<dyn std::error::Error + Send + Sync>;
-
-#[derive(BotCommands, Debug, Clone)]
-#[command()]
-enum BotCommands {
-    Start,
-}
-
-pub struct AppState {
-    app_config: AppConfig,
-    routing_config: RoutingConfig,
-    vless_identity_repo: Arc<dyn VlessIdentityRepoTrait>,
+struct AppState {
+    password: String,
+    config_dir: PathBuf,
+    index_html: String,
 }
 
 #[tokio::main]
 async fn main() {
-    let config = AppConfig::load();
-    logger::init(&config.log_level, config.log_disable_timestamp);
-    info!("Starting bot and config server");
-
-    std::panic::set_hook(Box::new(|panic_info| {
-        error!(%panic_info, "Unhandled panic");
-    }));
-
-    let pool = sing_box_config_bot::db::connect(&config.db_location)
-        .expect("Failed to initialize database");
-    let user_repo = Arc::new(UserRepo::new(pool.clone()));
-    let vless_identity_repo = Arc::new(VlessIdentityRepo::new(pool.clone()));
-    let routing_config =
-        RoutingConfig::load("config/domains.json").expect("Failed to load routing config");
-
-    let bot = Bot::new(config.tg_bot_token.clone());
-
-    let handle_msg_service = Arc::new(HandleMsgService::new(
-        bot.clone(),
-        user_repo.clone(),
-        vless_identity_repo.clone(),
-        config.clone(),
-    ));
-
-    let app_state = Arc::new(AppState {
-        app_config: config.clone(),
-        routing_config,
-        vless_identity_repo,
-    });
-
-    // Build HTTP server for config delivery
-    let http_app = Router::new()
-        .route("/health", get(health))
-        .route("/{uuid}", get(get_config))
-        .layer(TraceLayer::new_for_http())
-        .with_state(app_state);
-
-    let server_addr = format!("0.0.0.0:8080");
-    let listener = tokio::net::TcpListener::bind(&server_addr)
-        .await
-        .expect("Failed to bind address");
-
-    info!("HTTP server listening on {}", server_addr);
-
-    // Run both bot and HTTP server concurrently
-    let bot_task = tokio::spawn(async move {
-        let handler = dptree::entry()
-            .branch(
-                Update::filter_message()
-                    .filter_command::<BotCommands>()
-                    .endpoint(handle_command),
-            )
-            .branch(Update::filter_message().endpoint(handle_message))
-            .branch(Update::filter_callback_query().endpoint(handle_callback));
-
-        Dispatcher::builder(bot, handler)
-            .dependencies(dptree::deps![handle_msg_service])
-            .enable_ctrlc_handler()
-            .build()
-            .dispatch()
-            .await;
-    });
-
-    let server_task = tokio::spawn(async move {
-        axum::serve(listener, http_app)
+    dotenvy::dotenv().expect("Failed to load .env file");
+    let state = Arc::new(AppState {
+        password: std::env::var("PASSWORD").expect("PASSWORD must be set in .env file"),
+        config_dir: std::path::Path::new("./config")
+            .canonicalize()
+            .unwrap_or_else(|_| std::path::Path::new("./config").to_path_buf()),
+        index_html: tokio::fs::read_to_string("./index.html")
             .await
-            .expect("HTTP server failed");
+            .expect("Failed to load config/index.html"),
     });
 
-    tokio::select! {
-        _ = bot_task => {},
-        _ = server_task => {},
-    }
+    let app = Router::new()
+        .route("/{password}/{filename}", get(serve_file))
+        .fallback(get(serve_index))
+        .layer(TraceLayer::new_for_http())
+        .with_state(state);
+
+    let addr = "127.0.0.1:3000";
+    println!("Starting file server on {}", addr);
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    axum::serve(listener, app).await.unwrap();
 }
 
-async fn handle_command(
-    _cmd: BotCommands,
-    msg: Message,
-    service: Arc<HandleMsgService>,
-) -> Result<(), teloxide::RequestError> {
-    if let Err(e) = service.handle_msg(&msg).await {
-        error!(error = %e, "Error handling /start command");
-    }
-    Ok(())
+async fn serve_index(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    (StatusCode::OK, Html(state.index_html.clone())).into_response()
 }
 
-async fn handle_message(
-    msg: Message,
-    service: Arc<HandleMsgService>,
-) -> Result<(), teloxide::RequestError> {
-    if let Err(e) = service.handle_msg(&msg).await {
-        error!(error = %e, "Error handling message");
-    }
-    Ok(())
-}
-
-async fn handle_callback(
-    query: CallbackQuery,
-    service: Arc<HandleMsgService>,
-) -> Result<(), teloxide::RequestError> {
-    if let Err(e) = service.handle_callback(&query).await {
-        error!(error = %e, "Error handling callback");
-    }
-    Ok(())
-}
-
-async fn health() -> &'static str {
-    "OK"
-}
-
-async fn get_config(
+async fn serve_file(
     State(state): State<Arc<AppState>>,
-    Path(uuid): Path<String>,
+    Path((password, filename)): Path<(String, String)>,
 ) -> impl IntoResponse {
-    let exists = match state.vless_identity_repo.get(&uuid) {
-        Ok(v) => v,
-        Err(e) => {
-            error!("Repo error: {}", e);
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
-    if exists.is_none() {
-        return StatusCode::NOT_FOUND.into_response();
+    if password != state.password {
+        return (StatusCode::NOT_FOUND, Html(state.index_html.clone())).into_response();
     }
 
-    match generate_config(&state.app_config, &state.routing_config, &uuid) {
-        Ok(config_json) => Json(config_json).into_response(),
+    let file_path = std::path::Path::new(&state.config_dir).join(&filename);
+
+    let canonical_path = match file_path.canonicalize() {
+        Ok(p) => p,
+        Err(_) => return (StatusCode::NOT_FOUND, Html(state.index_html.clone())).into_response(),
+    };
+
+    if !canonical_path.starts_with(&state.config_dir) {
+        return (StatusCode::FORBIDDEN, Html(state.index_html.clone())).into_response();
+    }
+
+    match tokio::fs::read_to_string(&canonical_path).await {
+        Ok(content) => {
+            let content_type = match canonical_path.extension().and_then(|e| e.to_str()) {
+                Some("json") => "application/json",
+                _ => "application/octet-stream",
+            };
+            (
+                StatusCode::OK,
+                [(axum::http::header::CONTENT_TYPE, content_type)],
+                content,
+            )
+                .into_response()
+        }
         Err(e) => {
-            error!("Failed to generate config: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            eprintln!("Failed to read file {}: {}", filename, e);
+            (StatusCode::NOT_FOUND, Html(state.index_html.clone())).into_response()
         }
     }
 }

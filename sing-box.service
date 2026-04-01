@@ -1,13 +1,14 @@
 [Unit]
-Description=Sing-Box Proxy Server
+Description=Sing-Box Config Bot
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/sing-box run -c /root/config.json
+ExecStart=/root/sing-box-config-bot/bin/sing-box-config-bot
 User=root
 Restart=always
 RestartSec=30
+WorkingDirectory=/root/sing-box-config-bot
 
 [Install]
 WantedBy=multi-user.target
